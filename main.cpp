@@ -89,7 +89,14 @@ const char* json_data_7a =
 
 const char* json_data_7b =
     "{\n"
-    "  \"a1\" : [4, 5]\n"
+    "  \"a1\" : [4, 5],\n"
+    "  \"c1\" : {},\n"
+    "  \"d1\" : [\n"
+    "    [1, 2, 42],\n"
+    "    {\n"
+    "      \"idx\" : 4\n"
+    "    }\n"
+    "  ]\n"
     "}\n";
 
 
@@ -106,29 +113,6 @@ write_json(const std::string& filename, const char* json_data)
 }
 
 
-void
-print(const boost::property_tree::ptree& pt,
-      std::ostream& os,
-      const std::string& path = "",
-      const std::string& indent = "")
-{
-    using namespace std;
-    using boost::property_tree::ptree;
-
-    ptree::const_iterator end = pt.end();
-    for (ptree::const_iterator it = pt.begin(); it != end; ++it) {
-        const string key = (it->first != "") ? it->first : "<empty>";
-        const string value = it->second.get_value<string>();
-        const string local_path = (path != "") ? path + "." + key : key;
-        os << indent << "'" << local_path << "'";
-        if (!value.empty())
-        {
-            os << " : '" << value << "'";
-        }
-        os << endl;
-        print(it->second, os, local_path, indent + "  "); // Recursive!
-    }
-}
 
 
 /**
@@ -140,6 +124,15 @@ bool isLeafTree(const boost::property_tree::ptree& pt)
     // size function returns number of childred.
     return pt.size() == 0;
 }
+
+
+/**
+ *
+ */
+bool isEmptyTree(const boost::property_tree::ptree& pt) {
+    return pt.data().empty() && isLeafTree(pt);
+}
+
 
 /**
  * @brief Check if @pt is an array, i.e. all its child keys are empty.
@@ -268,6 +261,110 @@ boost::property_tree::ptree merge(const boost::property_tree::ptree& pt1,
     }
 
     return merged;
+}
+
+
+std::string nextIndent(const std::string& indent)
+{
+    return indent + "  ";
+}
+
+void print(const boost::property_tree::ptree& pt,
+        std::ostream& os,
+        const boost::property_tree::ptree::path_type& path =
+                boost::property_tree::ptree::path_type(),
+        const std::string& indent = "",
+        const bool inArray = false)
+{
+    using namespace std;
+    using boost::property_tree::ptree;
+
+    if (inArray)
+    {
+        size_t i = 0;
+        const auto end = pt.end();
+        for (auto it = pt.begin(); it != end; ++it, ++i)
+        {
+            stringstream ss;
+            ss << "[" << i << "]";
+            const string key = ss.str();
+            const ptree& tree = it->second;
+            const string& data = tree.data();
+            const bool tree_is_array = isArrayTree(tree);
+            const bool tree_is_leaf = isLeafTree(tree);
+            const bool tree_is_empty = isEmptyTree(tree);
+
+
+            const ptree::path_type local_path = path / ptree::path_type(key);
+
+            os << indent << "'" << local_path.dump() << "'";
+            if (!data.empty())
+            {
+                os << " : '" << data << "'";
+            }
+            if (tree_is_array)
+            {
+                os << " <array>";
+            }
+            if (tree_is_leaf)
+            {
+                os << " <leaf>";
+            }
+            else
+            {
+                os << " <internal>";
+            }
+            if (tree_is_empty)
+            {
+                os << " <empty>";
+            }
+            os << endl;
+
+            // Recursive!
+            print(tree, os, local_path, nextIndent(indent), tree_is_array);
+        }
+    }
+    else
+    {
+        const auto end = pt.end();
+        for (auto it = pt.begin(); it != end; ++it)
+        {
+            const string& key = it->first;
+            const ptree& tree = it->second;
+            const string& data = tree.data();
+            const bool tree_is_array = isArrayTree(tree);
+            const bool tree_is_leaf = isLeafTree(tree);
+            const bool tree_is_empty = isEmptyTree(tree);
+
+            const ptree::path_type local_path = path / ptree::path_type(key);
+
+            os << indent << "'" << local_path.dump() << "'";
+            if (!data.empty())
+            {
+                os << " : '" << data << "'";
+            }
+            if (tree_is_array)
+            {
+                os << " <array>";
+            }
+            if (tree_is_leaf)
+            {
+                os << " <leaf>";
+            }
+            else
+            {
+                os << " <internal>";
+            }
+            if (tree_is_empty)
+            {
+                os << " <empty>";
+            }
+            os << endl;
+
+            // Recursive!
+            print(tree, os, local_path, nextIndent(indent), tree_is_array);
+        }
+    }
 }
 
 
