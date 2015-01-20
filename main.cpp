@@ -1,4 +1,5 @@
 #include <boost/property_tree/ptree.hpp>
+#include <boost/property_tree/string_path.hpp>
 #include <boost/property_tree/json_parser.hpp>
 #include <boost/foreach.hpp>
 #include <fstream>
@@ -62,6 +63,35 @@ const char* json_data_5 =
     "\"non_empty_array\" : [2, 3, 4, 5]\n"
     "}\n";
 
+const char* json_data_6 =
+    "{\n"
+    "  \"a1\" : {\n"
+    "    \"a2\" : {\n"
+    "      \"a3\" : 42,\n"
+    "      \"a3\" : 42\n"
+    "    },\n"
+    "    \"b2\" : { \n"
+    "      \"a3\" : 42\n"
+    "    }\n"
+    "  },\n"
+    "  \"b1\" : {\n"
+    "  }\n"
+    "}\n";
+
+const char* json_data_7a =
+    "{\n"
+    "  \"a1\" : [1, 2, 3],\n"
+    "  \"b1\" :  \n"
+    "  {\n"
+    "    \"value\" : 42"
+    "  }\n"
+    "}\n";
+
+const char* json_data_7b =
+    "{\n"
+    "  \"a1\" : [4, 5]\n"
+    "}\n";
+
 
 void
 write_json(const std::string& filename, const char* json_data)
@@ -76,23 +106,52 @@ write_json(const std::string& filename, const char* json_data)
 }
 
 
+void
+print(const boost::property_tree::ptree& pt,
+      std::ostream& os,
+      const std::string& path = "",
+      const std::string& indent = "")
+{
+    using namespace std;
+    using boost::property_tree::ptree;
+
+    ptree::const_iterator end = pt.end();
+    for (ptree::const_iterator it = pt.begin(); it != end; ++it) {
+        const string key = (it->first != "") ? it->first : "<empty>";
+        const string value = it->second.get_value<string>();
+        const string local_path = (path != "") ? path + "." + key : key;
+        os << indent << "'" << local_path << "'";
+        if (!value.empty())
+        {
+            os << " : '" << value << "'";
+        }
+        os << endl;
+        print(it->second, os, local_path, indent + "  "); // Recursive!
+    }
+}
+
+
 /**
  * @brief Check if @a pt is a leaf, i.e. has no children.
- * @return true if @a pt has no children, otherwise false.
+ * @return True if @a pt has no children, otherwise false.
  */
-bool is_leaf(const boost::property_tree::ptree& pt)
+bool isLeafTree(const boost::property_tree::ptree& pt)
 {
+    // size function returns number of childred.
     return pt.size() == 0;
 }
 
 /**
- *
+ * @brief Check if @pt is an array, i.e. all its child keys are empty.
+ *        Note that a leaf-tree (which has no keys) is not an array.
+ * @return True if @pt is an array, otherwise false.
  */
-bool is_array(const boost::property_tree::ptree& pt)
+bool isArrayTree(const boost::property_tree::ptree& pt)
 {
     using boost::property_tree::ptree;
 
-    if (is_leaf(pt)) {
+    if (isLeafTree(pt))
+    {
         return false;
     }
 
@@ -109,12 +168,13 @@ bool is_array(const boost::property_tree::ptree& pt)
     return true;
 }
 
+
 /**
  * @brief Check if the direct children of @a pt have unique keys.
- * @return true if all children of @a pt have unique keys, otherwise false.
- *         If @a pt is a leaf, return true.
+ * @return True if all direct children of @a pt have unique keys,
+ *         otherwise false. Returns true for leaf trees, which have no children.
  */
-bool has_unique_child_keys(const boost::property_tree::ptree& pt)
+bool hasUniqueKeys(const boost::property_tree::ptree& pt)
 {
     using namespace std;
     using boost::property_tree::ptree;
@@ -133,183 +193,83 @@ bool has_unique_child_keys(const boost::property_tree::ptree& pt)
             }
         }
     }
+
     return true;
 }
 
 
-
-
-void
-print(const boost::property_tree::ptree& pt,
-      std::ostream& os,
-      const std::string& path = "",
-      const std::string& indent = "")
+/**
+ * @brief Check if the all (direct and indirect) children of @a pt have unique keys.
+ * @return True if all children of @a pt have unique keys, otherwise false.
+ *         If @a pt is a leaf, return true.
+ */
+bool hasUniquePaths(const boost::property_tree::ptree& pt)
 {
-    using namespace std;
     using boost::property_tree::ptree;
 
-    ptree::const_iterator end = pt.end();
-    for (ptree::const_iterator it = pt.begin(); it != end; ++it) {
-        const string key = (it->first != "") ? it->first : "<empty>";
-        const string value = it->second.get_value<string>();
-        const string local_path = (path != "") ? path + "." + key : key;
-        os << indent << "'" << local_path << "' : '" << value << "'" << endl;
-        print(it->second, os, local_path, indent + "  "); // Recursive!
+    if (!hasUniqueKeys(pt)) {
+        return false;
     }
+
+    const auto iend = pt.end();
+    for (auto iter = pt.begin(); iter != iend; ++iter) {
+        const ptree& child = iter->second;
+        if (!hasUniquePaths(child)) { // Recursive!
+            return false;
+        }
+    }
+
+    return true;
 }
 
 
-// get_child("path.to.child")
-// put_child
-
+/**
+ *
+ */
 boost::property_tree::ptree merge(const boost::property_tree::ptree& pt1,
                                   const boost::property_tree::ptree& pt2) {
     using namespace std;
     using boost::property_tree::ptree;
 
-    // Initialize to first tree.
+    // Initialize to merge result to first tree.
     ptree merged = pt1;
 
-    // ...
-    queue<string> keys;
-    queue<ptree> values;
-    values.push(pt2);
+    // Setup a queue of children for traversal of tree.
+    queue<pair<ptree::path_type, ptree>> children;
+    children.push(make_pair(ptree::path_type(), pt2));
 
-    while (!values.empty()) {
+    while (!children.empty()) {
         // Setup keys and corresponding values
-        ptree pt = values.front();
-        values.pop();
+        const auto child = children.front();
+        children.pop();
+        const ptree::path_type& path = child.first;
+        const ptree& tree = child.second;
 
-        string path = "";
-        if (!keys.empty())
+        const auto iend = tree.end();
+        for (auto iter = tree.begin(); iter != iend; ++iter)
         {
-          path = keys.front();
-          keys.pop();
-        }
-        cout << "path: " << path << endl;
-
-        const ptree::const_iterator iend = pt.end();
-        for (ptree::const_iterator iter = pt.begin(); iter != iend; ++iter)
-        {
-            const string& key = iter->first;
+            const ptree::key_type& sub_key = iter->first;
             const ptree& sub_tree = iter->second;
 
-            if (is_leaf(sub_tree))
-            {
-                // No "." for top-level entries.
-                string local_path;
-                if (path == "")
-                {
-                    local_path = key;
-                }
-                else
-                {
-                    local_path = path + "." + key;
-                }
+            const ptree::path_type sub_path = path / ptree::path_type(sub_key);
 
-                // Put into combined property tree
-                merged.put(local_path, sub_tree.data());
-                cout << "put: " << local_path << " | " << sub_tree.data() << endl;
+            if (isLeafTree(sub_tree) || isArrayTree(sub_tree))
+            {
+                // Put sub-tree into merged property tree.
+                merged.put_child(sub_path, sub_tree);
             }
             else
-            {   // Sub-tree.
-                if (path == "")
-                {
-                    keys.push(key);
-                }
-                else
-                {
-                    keys.push(path + "." + key);
-                }
-
-                // Put values (the subtrees) aside too.
-                values.push(sub_tree);
+            {
+                // Actual sub-tree with non-array element children.
+                // Store sub_tree for further processing.
+                children.push(make_pair(sub_path, sub_tree));
             }
-#if 0
-            const string key = (it->first != "") ? it->first : "<empty>";
-            const string value = it->second.get_value<string>();
-            const string local_path = (path != "") ? path + "." + key : key;
-            cout << indent << "'" << local_path << "' : '" << value << "'" << endl;
-            print(it->second, local_path, indent + "  "); // Recursive!
-#endif
         }
-
     }
 
     return merged;
 }
 
-#if 0
-boost::property_tree::ptree
-mergePropertyTrees(const boost::property_tree::ptree& rptFirst,
-                   const boost::property_tree::ptree& rptSecond)
-{
-  using namespace std;
-
-  // Take over first property tree
-  boost::property_tree::ptree ptMerged = rptFirst;
-
-  // Keep track of keys and values (subtrees) in second property tree
-  queue<string> qKeys;
-  queue<boost::property_tree::ptree> qValues;
-  qValues.push(rptSecond);
-
-  // Iterate over second property tree
-  while (!qValues.empty())
-  {
-    // Setup keys and corresponding values
-    boost::property_tree::ptree ptree = qValues.front();
-    qValues.pop();
-    string keychain = "";
-    if (!qKeys.empty())
-    {
-      keychain = qKeys.front();
-      qKeys.pop();
-    }
-
-    // Iterate over keys level-wise
-    BOOST_FOREACH (const boost::property_tree::ptree::value_type& child, ptree)
-    {
-      // Leaf
-      if (child.second.size() == 0)
-      {
-        // No "." for first level entries
-        string s;
-        if (keychain != "")
-        {
-          s = keychain + "." + child.first.data();
-        }
-        else
-        {
-          s = child.first.data();
-        }
-
-        // Put into combined property tree
-        ptMerged.put(s, child.second.data());
-      }
-      // Subtree
-      else
-      {
-        // Put keys (identifiers of subtrees) and all of its parents (where present)
-        // aside for later iteration. Keys on first level have no parents.
-        if (keychain != "")
-        {
-          qKeys.push(keychain + "." + child.first.data());
-        }
-        else
-        {
-          qKeys.push(child.first.data());
-        }
-
-        // Put values (the subtrees) aside too.
-        qValues.push(child.second);
-      }
-    }
-  }
-
-  return ptMerged;
-}
-#endif
 
 int
 main(int argc, char* argv[])
@@ -335,7 +295,7 @@ main(int argc, char* argv[])
         }
 #endif
 
-#if 1
+#if 0
         {
             cout << endl << "==========" << endl << endl;
 
@@ -366,7 +326,7 @@ main(int argc, char* argv[])
         }
 #endif
 
-#if 1
+#if 0
         {
             write_json("data_4.json", json_data_4);
             ptree config;
@@ -376,13 +336,21 @@ main(int argc, char* argv[])
             cout << "-----" << endl;
 
             cout << "is_leaf <root>: " << is_leaf(config) << endl;
-            cout << "has_unique_child_keys <root>: " << has_unique_child_keys(config) << endl;
+            cout << "has_unique_child_keys <root>: "
+                 << has_unique_child_keys(config) << endl;
 
             cout << "is_leaf <frame>: " << is_leaf(config.get_child("frame")) << endl;
-            cout << "has_unique_child_keys <frame>: " << has_unique_child_keys(config.get_child("frame")) << endl;
+            cout << "has_unique_child_keys <frame>: "
+                 << has_unique_child_keys(config.get_child("frame")) << endl;
 
             cout << "is_leaf <frame.index>: " << is_leaf(config.get_child("frame.index")) << endl;
-            cout << "has_unique_child_keys <frame.index>: " << has_unique_child_keys(config.get_child("frame.index")) << endl;
+            cout << "has_unique_child_keys <frame.index>: "
+                 << has_unique_child_keys(config.get_child("frame.index")) << endl;
+
+            ptree empty_config;
+            cout << "is_leaf <empty>: " << is_leaf(empty_config) << endl;
+            cout << "has_unique_child_keys <empty>: "
+                 << has_unique_child_keys(empty_config) << endl;
 
             // Cannot set data for non-leaf tree when using JSON!
             //config.get_child("frame").data() = "test42";
@@ -390,7 +358,7 @@ main(int argc, char* argv[])
         }
 #endif
 
-#if 1
+#if 0
         {
             write_json("data_5.json", json_data_5);
             ptree config;
@@ -402,6 +370,59 @@ main(int argc, char* argv[])
             cout << "is_array <root>: " << ::is_array(config) << endl;
             cout << "is_array <root.empty_array>: " << ::is_array(config.get_child("empty_array")) << endl;
             cout << "is_array <root.non_empty_array>: " << ::is_array(config.get_child("non_empty_array")) << endl;
+        }
+#endif
+
+#if 0
+        {
+            write_json("data_6.json", json_data_6);
+            ptree config;
+            read_json("data_6.json", config);
+            cout << "-----" << endl;
+            print(config, cout);
+            cout << "-----" << endl;
+
+            cout << "has_unique_paths <root>: " << has_unique_paths(config) << endl;
+            cout << "has_unique_paths <root.a1.b2>: " << has_unique_paths(config.get_child("a1.b2")) << endl;
+        }
+#endif
+
+#if 1
+        {
+            write_json("data_7a.json", json_data_7a);
+            ptree config_a;
+            read_json("data_7a.json", config_a);
+            cout << "-----" << endl;
+            print(config_a, cout);
+            cout << "-----" << endl;
+
+            write_json("data_7b.json", json_data_7b);
+            ptree config_b;
+            read_json("data_7b.json", config_b);
+            cout << "-----" << endl;
+            print(config_b, cout);
+            cout << "----- merge(a, b)" << endl;
+            print(merge(config_a, config_b), cout);
+            cout << "----- merge(b, a)" << endl;
+            print(merge(config_b, config_a), cout);
+        }
+#endif
+
+
+#if 0
+        {
+            ptree pipeline_config;
+            read_json("pipeline.json", pipeline_config);
+            cout << "-----" << endl;
+            print(pipeline_config, cout);
+            cout << "-----" << endl;
+
+            ptree pipeline_config_override;
+            read_json("pipeline_override.json", pipeline_config_override);
+            cout << "-----" << endl;
+            print(pipeline_config_override, cout);
+            cout << "-----" << endl;
+
         }
 #endif
 
