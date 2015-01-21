@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 2.8)
 
-project(ptree-test)
+project(ptree-utils)
 
 # NOTE: Uses environment variable $BOOST_ROOT to find the boost package.
 find_package(Boost 
