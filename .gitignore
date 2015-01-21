@@ -26,4 +26,8 @@
 *.exe
 *.out
 *.app
+
 CMakeLists.txt.user
+
+# Build folder
+build/
