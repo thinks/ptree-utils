@@ -30,7 +30,6 @@ const char* json_data_2 =
     "\"MyOldSection\" : {\n"
     "\t\"old-value\" : 3.14\n"
     "},\n"
-    "\"MySection\" : {\n"
     "\t\"update_me\" : 33,\n"
     "\t\"do_not_touch_value\" : 0\n"
     "},\n"
@@ -81,7 +80,7 @@ const char* json_data_6 =
 const char* json_data_7a =
     "{\n"
     "  \"a1\" : [1, 2, 3],\n"
-    "  \"b1\" :  \n"
+    "  \"b1\" : \n"
     "  {\n"
     "    \"value\" : 42"
     "  }\n"
@@ -127,7 +126,8 @@ bool isLeafTree(const boost::property_tree::ptree& pt)
 
 
 /**
- *
+ * @ Checks if @a pt is empty, i.e. has no data and no children.
+ * @return True if @a pt is empty, otherwise false.
  */
 bool isEmptyTree(const boost::property_tree::ptree& pt) {
     return pt.data().empty() && isLeafTree(pt);
@@ -269,22 +269,24 @@ std::string nextIndent(const std::string& indent)
     return indent + "  ";
 }
 
-void print(const boost::property_tree::ptree& pt,
+void print(
+        const boost::property_tree::ptree& pt,
         std::ostream& os,
         const boost::property_tree::ptree::path_type& path =
                 boost::property_tree::ptree::path_type(),
         const std::string& indent = "",
-        const bool inArray = false)
+        const bool in_array = false)
 {
     using namespace std;
     using boost::property_tree::ptree;
 
-    if (inArray)
+    if (in_array)
     {
         size_t i = 0;
         const auto end = pt.end();
         for (auto it = pt.begin(); it != end; ++it, ++i)
         {
+            // Array element keys are empty, use [i] notation instead
             stringstream ss;
             ss << "[" << i << "]";
             const string key = ss.str();
@@ -302,10 +304,6 @@ void print(const boost::property_tree::ptree& pt,
             {
                 os << " : '" << data << "'";
             }
-            if (tree_is_array)
-            {
-                os << " <array>";
-            }
             if (tree_is_leaf)
             {
                 os << " <leaf>";
@@ -313,6 +311,10 @@ void print(const boost::property_tree::ptree& pt,
             else
             {
                 os << " <internal>";
+            }
+            if (tree_is_array)
+            {
+                os << " <array>";
             }
             if (tree_is_empty)
             {
@@ -343,10 +345,6 @@ void print(const boost::property_tree::ptree& pt,
             {
                 os << " : '" << data << "'";
             }
-            if (tree_is_array)
-            {
-                os << " <array>";
-            }
             if (tree_is_leaf)
             {
                 os << " <leaf>";
@@ -354,6 +352,10 @@ void print(const boost::property_tree::ptree& pt,
             else
             {
                 os << " <internal>";
+            }
+            if (tree_is_array)
+            {
+                os << " <array>";
             }
             if (tree_is_empty)
             {
@@ -486,22 +488,31 @@ main(int argc, char* argv[])
 
 #if 1
         {
-            write_json("data_7a.json", json_data_7a);
+            ::write_json("data_7a.json", json_data_7a);
             ptree config_a;
             read_json("data_7a.json", config_a);
-            cout << "-----" << endl;
+            cout << "----- a" << endl;
+            cout << "hasUniquePaths(a): " << hasUniquePaths(config_a) << endl;
             print(config_a, cout);
-            cout << "-----" << endl;
+            cout << "----- " << endl;
 
-            write_json("data_7b.json", json_data_7b);
+            ::write_json("data_7b.json", json_data_7b);
             ptree config_b;
             read_json("data_7b.json", config_b);
-            cout << "-----" << endl;
+            cout << "----- b" << endl;
+            cout << "hasUniquePaths(b): " << hasUniquePaths(config_b) << endl;
             print(config_b, cout);
+            cout << "----- " << endl;
+
             cout << "----- merge(a, b)" << endl;
-            print(merge(config_a, config_b), cout);
+            ptree merged_ab = merge(config_a, config_b);
+            print(merged_ab, cout);
             cout << "----- merge(b, a)" << endl;
-            print(merge(config_b, config_a), cout);
+            ptree merged_ba = merge(config_b, config_a);
+            print(merged_ba, cout);
+
+            write_json("merged_7ab.json", merged_ab);
+            write_json("merged_7ba.json", merged_ba);
         }
 #endif
 
